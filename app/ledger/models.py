@@ -5,7 +5,9 @@ from datetime import datetime
 @dataclass
 class Operation:
     """
-    Representa una operación financiera registrada por Orbis.
+    Representa una operación en memoria; no es el modelo persistido por SQLAlchemy.
+
+    Los importes y comisiones son floats y no llevan validación de moneda aquí.
     """
 
     operation_type: str
@@ -23,9 +25,7 @@ class Operation:
     timestamp: datetime | None = None
 
     def total_fees(self) -> float:
-        """
-        Devuelve todas las comisiones de la operación.
-        """
+        """Suma las comisiones de trading, retirada y red de esta operación."""
         return (
             self.trading_fee
             + self.withdrawal_fee
@@ -33,8 +33,5 @@ class Operation:
         )
 
     def total_cost(self) -> float:
-        """
-        Devuelve el coste total:
-        dinero invertido + comisiones.
-        """
+        """Devuelve importe gastado más comisiones, en la misma unidad asumida."""
         return self.amount_spent + self.total_fees()

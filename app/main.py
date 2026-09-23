@@ -21,9 +21,9 @@ app = FastAPI(
 )
 
 
-# Obtiene el estado root
 @app.get("/")
 def root():
+    """Devuelve la identidad y versión declarada de la API para comprobar que responde."""
     return {
         "name": "Orbis",
         "version": "0.1.0",
@@ -31,14 +31,14 @@ def root():
     }
 
 
-# Lista la estrategia
 @app.get("/strategies")
 def list_strategies(db = Depends(get_db)):
+    """Lista todas las estrategias guardadas, con independencia de `enabled`."""
     return get_strategies(db)
 
-# Añade una estrategia
 @app.post("/strategies")
 def add_strategy(strategy: StrategyCreate, db = Depends(get_db)):
+    """Guarda la definición de una estrategia; todavía no programa ejecuciones."""
     return create_strategy(
         db=db,
         name=strategy.name,
@@ -47,9 +47,9 @@ def add_strategy(strategy: StrategyCreate, db = Depends(get_db)):
         enabled=strategy.enabled,
     )
 
-# Lee la estrategia
 @app.get("/strategies/{strategy_id}")
 def read_strategy(strategy_id: int, db = Depends(get_db)):
+    """Busca una estrategia por ID y devuelve HTTP 404 si no existe."""
     strategy = get_strategy(db, strategy_id)
 
     if strategy is None:
@@ -61,13 +61,13 @@ def read_strategy(strategy_id: int, db = Depends(get_db)):
     return strategy
 
 
-# Edita la estrategia
 @app.put("/strategies/{strategy_id}")
 def edit_strategy(
     strategy_id: int,
     strategy: StrategyCreate,
     db = Depends(get_db)
 ):
+    """Reemplaza los campos configurables de una estrategia existente."""
     updated_strategy = update_strategy(
         db=db,
         strategy_id=strategy_id,
@@ -86,9 +86,9 @@ def edit_strategy(
     return updated_strategy
 
 
-# Borra la estrategia
 @app.delete("/strategies/{strategy_id}")
 def remove_strategy(strategy_id: int, db = Depends(get_db)):
+    """Elimina una estrategia por ID o devuelve HTTP 404 si no existe."""
     deleted = delete_strategy(db, strategy_id)
 
     if not deleted:
@@ -104,9 +104,7 @@ def remove_strategy(strategy_id: int, db = Depends(get_db)):
 
 @app.get("/operations")
 def list_operations(db = Depends(get_db)):
-    """
-    Devuelve el historial de operaciones del Ledger.
-    """
+    """Devuelve las operaciones registradas, sin filtros ni orden explícito."""
     return get_operations(db)
 
 
@@ -115,9 +113,7 @@ def add_operation(
     operation: OperationCreate,
     db = Depends(get_db)
 ):
-    """
-    Registra una nueva operación financiera.
-    """
+    """Registra los datos recibidos; no envía ninguna orden a un exchange."""
     return create_operation(
         db=db,
         operation_type=operation.operation_type,
@@ -133,10 +129,7 @@ def add_operation(
 
 @app.get("/portfolio/summary")
 def portfolio_summary(db = Depends(get_db)):
-    """
-    Calcula el estado de la cartera utilizando
-    las operaciones registradas en el Ledger.
-    """
+    """Resume compras y comisiones del Ledger sin consultar precios de mercado."""
     operations = get_operations(db)
 
     return calculate_portfolio_summary(operations)

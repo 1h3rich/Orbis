@@ -1,6 +1,6 @@
 def calculate_total_invested(amounts: list[float]) -> float:
     """
-    Calcula el capital total invertido.
+    Suma los importes recibidos; una lista vacía produce 0.
 
     Ejemplo:
     [50, 50, 100] -> 200
@@ -13,7 +13,7 @@ def calculate_average_buy_price(
     total_asset_received: float
 ) -> float:
     """
-    Calcula el precio medio pagado por una unidad del activo.
+    Divide lo invertido entre unidades recibidas; devuelve 0 si no hay unidades.
 
     Ejemplo:
     1000 € invertidos / 0.01 BTC = 100000 €/BTC
@@ -28,7 +28,7 @@ def calculate_position_value(
     current_price: float
 ) -> float:
     """
-    Calcula el valor actual de una posición.
+    Multiplica unidades por precio; devuelve 0 ante un valor negativo.
 
     Ejemplo:
     0.01 BTC * 100000 €/BTC = 1000 €
@@ -44,7 +44,7 @@ def calculate_profit_loss(
     current_value: float
 ) -> float:
     """
-    Calcula el beneficio o pérdida actual.
+    Resta el capital invertido al valor actual, sin descontar comisiones.
 
     Resultado positivo = beneficio.
     Resultado negativo = pérdida.
@@ -59,7 +59,9 @@ def calculate_return_percentage(
     current_value: float
 ) -> float:
     """
-    Calcula la rentabilidad porcentual de una inversión.
+    Calcula (valor actual - invertido) / invertido * 100.
+
+    Si el capital invertido es cero o negativo, devuelve 0.
 
     Ejemplo:
     1000 € invertidos y 1200 € actuales -> +20 %
@@ -73,7 +75,7 @@ def calculate_return_percentage(
 
 def calculate_total_fees(fees: list[float]) -> float:
     """
-    Calcula el total de comisiones pagadas.
+    Suma las comisiones recibidas, sin distinguir su moneda.
 
     Puede incluir:
     - comisión de compra
@@ -88,7 +90,7 @@ def calculate_net_investment(
     total_fees: float
 ) -> float:
     """
-    Calcula el coste real de la inversión incluyendo comisiones.
+    Suma el importe invertido y las comisiones recibidas.
 
     Ejemplo:
     1000 € invertidos + 10 € en comisiones = 1010 €
@@ -97,8 +99,12 @@ def calculate_net_investment(
 
 def calculate_portfolio_summary(operations: list) -> dict:
     """
-    Calcula el resumen de una cartera a partir
-    de las operaciones registradas en el Ledger.
+    Resume todas las compras como una sola posición y suma todas las comisiones.
+
+    Solo las operaciones con tipo exacto "BUY" cuentan para importe y unidades;
+    las comisiones incluyen cualquier tipo de operación. El precio medio se
+    calcula como importe bruto / unidades, sin añadir comisiones. No separa
+    activos ni monedas y no calcula valor actual ni rentabilidad.
     """
 
     buy_operations = [

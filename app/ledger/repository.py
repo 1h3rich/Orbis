@@ -16,7 +16,9 @@ def create_operation(
     network_fee: float = 0.0,
 ):
     """
-    Guarda una nueva operación en el Ledger.
+    Inserta y confirma una operación; devuelve el registro con su ID asignado.
+
+    No valida el tipo de operación ni comprueba si ya existe un duplicado.
     """
 
     operation = Operation(
@@ -39,9 +41,6 @@ def create_operation(
 
 
 def get_operations(db: Session):
-    """
-    Devuelve todas las operaciones registradas.
-    """
+    """Consulta todas las operaciones sin filtros ni orden garantizado."""
     return db.query(Operation).all()
-
 

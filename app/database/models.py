@@ -5,6 +5,7 @@ from app.database.database import Base
 
 
 class Strategy(Base):
+    """Definición persistida de una estrategia; no contiene estado de ejecución."""
     __tablename__ = "strategies"
 
     id: Mapped[int] = mapped_column(
@@ -34,8 +35,10 @@ class Strategy(Base):
 
 class Operation(Base):
     """
-    Operación financiera almacenada permanentemente
-    en el Ledger de Orbis.
+    Registro básico de operación en SQLite, separado de la dataclass del Ledger.
+
+    Conserva importes y comisiones, pero aún no incluye fecha, exchange,
+    estrategia, estado de orden ni identificadores externos.
     """
 
     __tablename__ = "operations"

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class StrategyCreate(BaseModel):
+    """Entrada para crear o reemplazar una estrategia; `config` admite cualquier clave."""
     name: str
     strategy_type: str
     enabled: bool = True
@@ -11,8 +12,10 @@ class StrategyCreate(BaseModel):
 
 class OperationCreate(BaseModel):
     """
-    Datos necesarios para registrar una operación
-    financiera en el Ledger.
+    Entrada HTTP para registrar una operación en el Ledger.
+
+    Los números no pueden ser negativos. El tipo, activo y moneda aún no
+    tienen un conjunto de valores restringido ni validación cruzada.
     """
 
     operation_type: str

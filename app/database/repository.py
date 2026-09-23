@@ -10,6 +10,7 @@ def create_strategy(
     config: dict,
     enabled: bool = True,
 ):
+    """Inserta una estrategia y devuelve el registro tras confirmar la transacción."""
     strategy = Strategy(
         name=name,
         strategy_type=strategy_type,
@@ -25,10 +26,12 @@ def create_strategy(
 
 
 def get_strategies(db: Session):
+    """Devuelve todas las estrategias, sin filtrar por su estado `enabled`."""
     return db.query(Strategy).all()
 
 
 def get_strategy(db: Session, strategy_id: int):
+    """Busca una estrategia por ID; devuelve None si no existe."""
     return db.query(Strategy).filter(
         Strategy.id == strategy_id
     ).first()
@@ -41,6 +44,7 @@ def update_strategy(
     config: dict,
     enabled: bool,
 ):
+    """Sustituye los campos de la estrategia; devuelve None si no existe."""
     strategy = get_strategy(db, strategy_id)
 
     if strategy is None:
@@ -57,6 +61,7 @@ def update_strategy(
     return strategy
 
 def delete_strategy(db: Session, strategy_id: int):
+    """Borra la estrategia; devuelve False si el ID no existe."""
     strategy = get_strategy(db, strategy_id)
 
     if strategy is None:
