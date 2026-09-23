@@ -1,6 +1,11 @@
 from fastapi import FastAPI, HTTPException, Depends
 from app.math.calculations import calculate_portfolio_summary
-from app.api.schemas import StrategyCreate, OperationCreate
+from app.api.schemas import (
+    StrategyCreate,
+    OperationCreate,
+    PaperBuyRequest,
+)
+from app.core.paper_trading import execute_and_record_paper_buy
 from app.ledger.repository import create_operation, get_operations
 from app.database import models
 from app.database.database import Base, engine, get_db
@@ -113,7 +118,10 @@ def add_operation(
     operation: OperationCreate,
     db = Depends(get_db)
 ):
-    """Registra los datos recibidos; no envía ninguna orden a un exchange."""
+    """
+    Registra manualmente una operación financiera.
+    """
+
     return create_operation(
         db=db,
         operation_type=operation.operation_type,
@@ -125,6 +133,11 @@ def add_operation(
         trading_fee=operation.trading_fee,
         withdrawal_fee=operation.withdrawal_fee,
         network_fee=operation.network_fee,
+        mode=operation.mode,
+        source=operation.source,
+        status=operation.status,
+        exchange=operation.exchange,
+        strategy_id=operation.strategy_id,
     )
 
 @app.get("/portfolio/summary")
@@ -133,3 +146,33 @@ def portfolio_summary(db = Depends(get_db)):
     operations = get_operations(db)
 
     return calculate_portfolio_summary(operations)
+
+@app.post("/paper/buy")
+def paper_buy(
+    request: PaperBuyRequest,
+    db = Depends(get_db)
+):
+    """
+    Ejecuta una compra simulada.
+
+    Guard debe autorizar la operación antes de que
+    Paper Trading pueda registrarla en el Ledger.
+    """
+
+    result = execute_and_record_paper_buy(
+        db=db,
+        asset=request.asset,
+        quote_currency=request.quote_currency,
+        order_amount=request.order_amount,
+        price=request.price,
+        available_budget=request.available_budget,
+        max_order_amount=request.max_order_amount,
+        estimated_fee=request.estimated_fee,
+        max_fee_percentage=request.max_fee_percentage,
+        exchange=request.exchange,
+        strategy_id=request.strategy_id,
+        daily_limit=request.daily_limit,
+        monthly_limit=request.monthly_limit,
+    )
+
+    return result

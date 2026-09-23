@@ -1,41 +1,21 @@
-from app.ledger.models import Operation
-from app.math.calculations import calculate_portfolio_summary
-from app.ledger.repository import (
-    create_operation,
-    get_operations,
-)
+from decimal import Decimal
+
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.database.database import Base
+from app.database.database import Base, get_db
+from app.ledger.models import Operation
 from app.ledger.repository import create_operation, get_operations
+from app.main import app
+from app.math.calculations import calculate_portfolio_summary
 
-def test_create_operation():
-    """
-    Comprueba que podemos representar una compra
-    dentro del Ledger de Orbis.
-    """
-    operation = Operation(
-        operation_type="BUY",
-        asset="BTC",
-        quote_currency="EUR",
-        amount_spent=100,
-        asset_received=0.001,
-        price=100000,
-        trading_fee=0.10,
-    )
 
-    assert operation.operation_type == "BUY"
-    assert operation.asset == "BTC"
-    assert operation.amount_spent == 100
-    assert operation.asset_received == 0.001
-    assert operation.trading_fee == 0.10
-
-def test_save_operation_in_database():
+def create_test_db():
     """
-    Comprueba que una operación puede guardarse
-    y recuperarse desde la base de datos.
+    Crea una base de datos SQLite temporal
+    para una prueba.
     """
 
     engine = create_engine(
@@ -47,6 +27,41 @@ def test_save_operation_in_database():
     Session = sessionmaker(bind=engine)
 
     Base.metadata.create_all(bind=engine)
+
+    return engine, Session
+
+
+def test_create_operation():
+    """
+    Comprueba que podemos representar una compra
+    utilizando Decimal dentro del dominio de Orbis.
+    """
+
+    operation = Operation(
+        operation_type="BUY",
+        asset="BTC",
+        quote_currency="EUR",
+        amount_spent=Decimal("100"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("100000"),
+        trading_fee=Decimal("0.10"),
+    )
+
+    assert operation.operation_type == "BUY"
+    assert operation.asset == "BTC"
+
+    assert operation.amount_spent == Decimal("100")
+    assert operation.asset_received == Decimal("0.001")
+    assert operation.trading_fee == Decimal("0.10")
+
+
+def test_save_operation_in_database():
+    """
+    Comprueba que una operación puede guardarse
+    y recuperarse manteniendo Decimal.
+    """
+
+    engine, Session = create_test_db()
 
     db = Session()
 
@@ -55,41 +70,40 @@ def test_save_operation_in_database():
         operation_type="BUY",
         asset="BTC",
         quote_currency="EUR",
-        amount_spent=100,
-        asset_received=0.001,
-        price=100000,
-        trading_fee=0.10,
+        amount_spent=Decimal("100"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("100000"),
+        trading_fee=Decimal("0.10"),
     )
 
     operations = get_operations(db)
 
     assert len(operations) == 1
     assert operations[0].asset == "BTC"
-    assert operations[0].amount_spent == 100
+
+    assert operations[0].amount_spent == Decimal(
+        "100.000000000000"
+    )
+
+    assert isinstance(
+        operations[0].amount_spent,
+        Decimal
+    )
 
     db.close()
+
 
 def test_operations_api():
     """
     Comprueba que la API permite registrar
     y consultar operaciones del Ledger.
     """
-    from fastapi.testclient import TestClient
-    from app.main import app
-    from app.database.database import get_db
 
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    Session = sessionmaker(bind=engine)
-
-    Base.metadata.create_all(bind=engine)
+    engine, Session = create_test_db()
 
     def override_get_db():
         db = Session()
+
         try:
             yield db
         finally:
@@ -110,7 +124,7 @@ def test_operations_api():
             "price": 100000,
             "trading_fee": 0.10,
             "withdrawal_fee": 0,
-            "network_fee": 0
+            "network_fee": 0,
         }
     )
 
@@ -124,39 +138,36 @@ def test_operations_api():
 
     app.dependency_overrides.clear()
 
+
 def test_operation_total_cost():
     """
-    Comprueba que el Ledger calcula correctamente
-    el coste total de una operación.
+    Comprueba que Decimal mantiene la precisión
+    al calcular comisiones y coste total.
     """
+
     operation = Operation(
         operation_type="BUY",
         asset="BTC",
         quote_currency="EUR",
-        amount_spent=100,
-        asset_received=0.001,
-        price=100000,
-        trading_fee=0.50,
-        withdrawal_fee=1.00,
-        network_fee=0.25,
+        amount_spent=Decimal("100"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("100000"),
+        trading_fee=Decimal("0.50"),
+        withdrawal_fee=Decimal("1.00"),
+        network_fee=Decimal("0.25"),
     )
 
-    assert operation.total_fees() == 1.75
-    assert operation.total_cost() == 101.75
+    assert operation.total_fees() == Decimal("1.75")
+    assert operation.total_cost() == Decimal("101.75")
+
 
 def test_calculate_portfolio_summary():
     """
     Comprueba que Orbis puede calcular una cartera
-    a partir de varias compras.
+    a partir de varias compras almacenadas con Decimal.
     """
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
 
-    Session = sessionmaker(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    engine, Session = create_test_db()
 
     db = Session()
 
@@ -165,10 +176,10 @@ def test_calculate_portfolio_summary():
         operation_type="BUY",
         asset="BTC",
         quote_currency="EUR",
-        amount_spent=500,
-        asset_received=0.005,
-        price=100000,
-        trading_fee=1,
+        amount_spent=Decimal("500"),
+        asset_received=Decimal("0.005"),
+        price=Decimal("100000"),
+        trading_fee=Decimal("1"),
     )
 
     create_operation(
@@ -176,43 +187,42 @@ def test_calculate_portfolio_summary():
         operation_type="BUY",
         asset="BTC",
         quote_currency="EUR",
-        amount_spent=500,
-        asset_received=0.00625,
-        price=80000,
-        trading_fee=1,
+        amount_spent=Decimal("500"),
+        asset_received=Decimal("0.00625"),
+        price=Decimal("80000"),
+        trading_fee=Decimal("1"),
     )
 
     operations = get_operations(db)
 
     summary = calculate_portfolio_summary(operations)
 
-    assert summary["total_invested"] == 1000
-    assert summary["total_asset_received"] == 0.01125
-    assert summary["total_fees"] == 2
+    assert summary["total_invested"] == Decimal(
+        "1000.000000000000"
+    )
 
-    assert round(
-        summary["average_buy_price"], 2
-    ) == 88888.89
+    assert summary["total_asset_received"] == Decimal(
+        "0.011250000000"
+    )
+
+    assert summary["total_fees"] == Decimal(
+        "2.000000000000"
+    )
+
+    assert summary["average_buy_price"].quantize(
+        Decimal("0.01")
+    ) == Decimal("88888.89")
 
     db.close()
 
+
 def test_portfolio_summary_api():
     """
-    Comprueba que la API puede calcular
-    el resumen de la cartera.
+    Comprueba que la API puede devolver correctamente
+    el resumen de una cartera basada en Decimal.
     """
-    from fastapi.testclient import TestClient
-    from app.main import app
-    from app.database.database import get_db
 
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-
-    Session = sessionmaker(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    engine, Session = create_test_db()
 
     def override_get_db():
         db = Session()
@@ -226,7 +236,7 @@ def test_portfolio_summary_api():
 
     client = TestClient(app)
 
-    client.post(
+    response = client.post(
         "/operations",
         json={
             "operation_type": "BUY",
@@ -237,9 +247,11 @@ def test_portfolio_summary_api():
             "price": 100000,
             "trading_fee": 2,
             "withdrawal_fee": 1,
-            "network_fee": 0
+            "network_fee": 0,
         }
     )
+
+    assert response.status_code == 200
 
     response = client.get("/portfolio/summary")
 
@@ -247,9 +259,77 @@ def test_portfolio_summary_api():
 
     data = response.json()
 
-    assert data["total_invested"] == 1000
-    assert data["total_asset_received"] == 0.01
-    assert data["total_fees"] == 3
-    assert data["average_buy_price"] == 100000
+    assert Decimal(str(data["total_invested"])) == Decimal("1000")
+    assert Decimal(str(data["total_asset_received"])) == Decimal("0.01")
+    assert Decimal(str(data["total_fees"])) == Decimal("3")
+    assert Decimal(str(data["average_buy_price"])) == Decimal("100000")
 
     app.dependency_overrides.clear()
+
+
+def test_ledger_operation_metadata():
+    """
+    El Ledger debe conservar metadatos suficientes
+    para reconstruir el origen de una operación.
+    """
+
+    engine, Session = create_test_db()
+
+    db = Session()
+
+    operation = create_operation(
+        db=db,
+        operation_type="BUY",
+        asset="BTC",
+        quote_currency="EUR",
+        amount_spent=Decimal("100"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("100000"),
+        trading_fee=Decimal("1"),
+        mode="PAPER",
+        source="MANUAL",
+        status="EXECUTED",
+        exchange="MEXC",
+    )
+
+    assert operation.id is not None
+    assert operation.timestamp is not None
+
+    assert operation.operation_type == "BUY"
+    assert operation.mode == "PAPER"
+    assert operation.source == "MANUAL"
+    assert operation.status == "EXECUTED"
+    assert operation.exchange == "MEXC"
+    assert operation.strategy_id is None
+
+    db.close()
+
+
+def test_ledger_default_metadata():
+    """
+    Comprueba los valores seguros por defecto
+    de una operación del Ledger.
+    """
+
+    engine, Session = create_test_db()
+
+    db = Session()
+
+    operation = create_operation(
+        db=db,
+        operation_type="BUY",
+        asset="BTC",
+        quote_currency="EUR",
+        amount_spent=Decimal("100"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("100000"),
+    )
+
+    assert operation.mode == "PAPER"
+    assert operation.source == "MANUAL"
+    assert operation.status == "EXECUTED"
+    assert operation.exchange is None
+    assert operation.strategy_id is None
+    assert operation.timestamp is not None
+
+    db.close()

@@ -1,37 +1,49 @@
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 
 @dataclass
 class Operation:
     """
-    Representa una operación en memoria; no es el modelo persistido por SQLAlchemy.
-
-    Los importes y comisiones son floats y no llevan validación de moneda aquí.
+    Representa una operación financiera dentro
+    del dominio de Orbis.
     """
 
     operation_type: str
     asset: str
     quote_currency: str
 
-    amount_spent: float
-    asset_received: float
-    price: float
+    amount_spent: Decimal
+    asset_received: Decimal
+    price: Decimal
 
-    trading_fee: float = 0.0
-    withdrawal_fee: float = 0.0
-    network_fee: float = 0.0
+    trading_fee: Decimal = Decimal("0")
+    withdrawal_fee: Decimal = Decimal("0")
+    network_fee: Decimal = Decimal("0")
 
+    mode: str = "PAPER"
+    source: str = "MANUAL"
+    status: str = "EXECUTED"
+
+    exchange: str | None = None
+    strategy_id: int | None = None
     timestamp: datetime | None = None
 
-    def total_fees(self) -> float:
-        """Suma las comisiones de trading, retirada y red de esta operación."""
+    def total_fees(self) -> Decimal:
+        """
+        Devuelve todas las comisiones asociadas
+        a la operación.
+        """
         return (
             self.trading_fee
             + self.withdrawal_fee
             + self.network_fee
         )
 
-    def total_cost(self) -> float:
-        """Devuelve importe gastado más comisiones, en la misma unidad asumida."""
+    def total_cost(self) -> Decimal:
+        """
+        Devuelve el coste total:
+        capital utilizado + comisiones.
+        """
         return self.amount_spent + self.total_fees()
