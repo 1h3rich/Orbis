@@ -57,6 +57,13 @@ def test_guard_blocks_negative_fee():
     assert result.allowed is False
 
 
+def test_guard_blocks_fee_that_consumes_order():
+    result = check_fee_limit(100, 100, 100)
+
+    assert result.allowed is False
+    assert result.reason == "Estimated fee must be lower than order amount"
+
+
 def test_evaluate_order_allows_safe_order():
     result = evaluate_order(
         order_amount=50,

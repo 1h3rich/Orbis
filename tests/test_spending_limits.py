@@ -153,6 +153,58 @@ def test_paper_and_live_spending_are_separate():
     db.close()
 
 
+def test_spending_limit_uses_only_the_requested_quote_currency():
+    db = create_test_db()
+
+    for currency, amount in (("EUR", "40"), ("USD", "90")):
+        create_operation(
+            db=db,
+            operation_type="BUY",
+            asset="BTC",
+            quote_currency=currency,
+            amount_spent=Decimal(amount),
+            asset_received=Decimal("0.001"),
+            price=Decimal("100000"),
+            mode="PAPER",
+        )
+
+    assert get_daily_spent(db, mode="PAPER", quote_currency="EUR") == Decimal("40")
+    assert get_monthly_spent(db, mode="PAPER", quote_currency="USD") == Decimal("90")
+
+    db.close()
+
+
+def test_paper_buy_does_not_mix_eur_and_usd_daily_limits():
+    db = create_test_db()
+    create_operation(
+        db=db,
+        operation_type="BUY",
+        asset="BTC",
+        quote_currency="USD",
+        amount_spent=Decimal("90"),
+        asset_received=Decimal("0.001"),
+        price=Decimal("90000"),
+        mode="PAPER",
+    )
+
+    result = execute_and_record_paper_buy(
+        db=db,
+        asset="BTC",
+        quote_currency="EUR",
+        order_amount=Decimal("20"),
+        price=Decimal("100000"),
+        available_budget=Decimal("100"),
+        max_order_amount=Decimal("100"),
+        estimated_fee=Decimal("0"),
+        max_fee_percentage=Decimal("2"),
+        daily_limit=Decimal("50"),
+    )
+
+    assert result.executed is True
+    assert get_daily_spent(db, mode="PAPER", quote_currency="EUR") == Decimal("20")
+    db.close()
+
+
 def test_previous_day_does_not_count_towards_today():
     db = create_test_db()
 

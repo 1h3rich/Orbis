@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -333,3 +334,54 @@ def test_ledger_default_metadata():
     assert operation.timestamp is not None
 
     db.close()
+
+
+def test_manual_operation_schema_rejects_forged_source():
+    from pydantic import ValidationError
+    from app.api.schemas import OperationCreate
+
+    with pytest.raises(ValidationError):
+        OperationCreate.model_validate({
+            "operation_type": "BUY",
+            "asset": "BTC",
+            "quote_currency": "EUR",
+            "amount_spent": "100",
+            "asset_received": "0.001",
+            "price": "100000",
+            "source": "STRATEGY",
+        })
+
+
+def test_manual_operation_rejects_unknown_strategy_reference():
+    engine, Session = create_test_db()
+
+    def override_get_db():
+        with Session() as db:
+            yield db
+
+    previous_override = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/operations",
+                json={
+                    "operation_type": "BUY",
+                    "asset": "BTC",
+                    "quote_currency": "EUR",
+                    "amount_spent": "100",
+                    "asset_received": "0.001",
+                    "price": "100000",
+                    "strategy_id": 999,
+                },
+            )
+            operations = client.get("/operations")
+
+        assert response.status_code == 404
+        assert operations.json() == []
+    finally:
+        if previous_override is None:
+            app.dependency_overrides.pop(get_db, None)
+        else:
+            app.dependency_overrides[get_db] = previous_override
+        engine.dispose()

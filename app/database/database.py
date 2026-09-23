@@ -1,8 +1,10 @@
+import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 
-DATABASE_URL = "sqlite:///./orbis.db"
+DATABASE_URL = os.environ.get("ORBIS_DATABASE_URL", "sqlite:///./orbis.db")
 
 
 class Base(DeclarativeBase):

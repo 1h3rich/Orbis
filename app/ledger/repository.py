@@ -31,6 +31,7 @@ def create_operation(
     status: str = "EXECUTED",
     exchange: str | None = None,
     strategy_id: int | None = None,
+    commit: bool = True,
 ):
     """
     Guarda una operación financiera en el Ledger
@@ -55,7 +56,10 @@ def create_operation(
     )
 
     db.add(operation)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(operation)
 
     return operation
@@ -69,21 +73,41 @@ def get_operations(db: Session):
     return db.query(Operation).all()
 
 
+def get_total_spent(
+    db: Session,
+    mode: str,
+    quote_currency: str,
+    since: datetime | None = None,
+) -> Decimal:
+    """Suma compras ejecutadas de un modo y moneda desde un instante dado."""
+    query = db.query(Operation.amount_spent).filter(
+        Operation.operation_type == "BUY",
+        Operation.status == "EXECUTED",
+        Operation.mode == mode,
+        Operation.quote_currency == quote_currency,
+    )
+    if since is not None:
+        query = query.filter(Operation.timestamp >= since)
+    amounts = query.all()
+    return sum((to_decimal(amount) for (amount,) in amounts), Decimal("0"))
+
+
 def get_spent_between(
     db: Session,
     start: datetime,
     end: datetime,
     mode: str,
+    quote_currency: str | None = None,
+    since: datetime | None = None,
 ) -> Decimal:
     """
     Calcula cuánto capital se ha gastado en compras
     ejecutadas dentro de un periodo concreto.
 
-    Las operaciones PAPER y LIVE se contabilizan
-    de forma independiente.
+    Separa PAPER y LIVE; opcionalmente limita el total a una moneda cotizada.
     """
 
-    total = db.query(
+    query = db.query(
         func.sum(Operation.amount_spent)
     ).filter(
         Operation.operation_type == "BUY",
@@ -91,7 +115,14 @@ def get_spent_between(
         Operation.mode == mode,
         Operation.timestamp >= start,
         Operation.timestamp < end,
-    ).scalar()
+    )
+
+    if quote_currency is not None:
+        query = query.filter(Operation.quote_currency == quote_currency)
+    if since is not None:
+        query = query.filter(Operation.timestamp >= since)
+
+    total = query.scalar()
 
     if total is None:
         return Decimal("0")
@@ -103,6 +134,8 @@ def get_daily_spent(
     db: Session,
     mode: str = "PAPER",
     now: datetime | None = None,
+    quote_currency: str | None = None,
+    since: datetime | None = None,
 ) -> Decimal:
     """
     Calcula cuánto capital se ha gastado
@@ -128,6 +161,8 @@ def get_daily_spent(
         start=start,
         end=end,
         mode=mode,
+        quote_currency=quote_currency,
+        since=since,
     )
 
 
@@ -135,6 +170,8 @@ def get_monthly_spent(
     db: Session,
     mode: str = "PAPER",
     now: datetime | None = None,
+    quote_currency: str | None = None,
+    since: datetime | None = None,
 ) -> Decimal:
     """
     Calcula cuánto capital se ha gastado
@@ -169,4 +206,6 @@ def get_monthly_spent(
         start=start,
         end=end,
         mode=mode,
+        quote_currency=quote_currency,
+        since=since,
     )

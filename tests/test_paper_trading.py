@@ -193,3 +193,25 @@ def test_strategy_paper_buy_records_strategy_source():
     assert operation.mode == "PAPER"
 
     db.close()
+
+
+def test_strategy_paper_buy_rejects_unknown_strategy():
+    db = create_test_db()
+
+    result = execute_and_record_paper_buy(
+        db=db,
+        asset="BTC",
+        quote_currency="EUR",
+        order_amount=Decimal("50"),
+        price=Decimal("100000"),
+        available_budget=Decimal("500"),
+        max_order_amount=Decimal("100"),
+        estimated_fee=Decimal("0.50"),
+        max_fee_percentage=Decimal("2"),
+        strategy_id=999,
+    )
+
+    assert result.executed is False
+    assert result.reason == "Strategy not found or disabled"
+    assert get_operations(db) == []
+    db.close()

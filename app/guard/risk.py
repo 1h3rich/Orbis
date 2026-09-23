@@ -84,6 +84,12 @@ def check_fee_limit(
             "Estimated fee cannot be negative"
         )
 
+    if estimated_fee >= order_amount:
+        return GuardResult(
+            False,
+            "Estimated fee must be lower than order amount"
+        )
+
     fee_percentage = (
         estimated_fee / order_amount
     ) * Decimal("100")

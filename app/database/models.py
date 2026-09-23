@@ -9,6 +9,7 @@ from sqlalchemy import (
     JSON,
     Numeric,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +42,50 @@ class Strategy(Base):
     config: Mapped[dict] = mapped_column(
         JSON,
         nullable=False
+    )
+
+
+class PaperScenario(Base):
+    """Capital y límites del simulador para una moneda cotizada."""
+
+    __tablename__ = "paper_scenarios"
+    __table_args__ = (UniqueConstraint("quote_currency"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    quote_currency: Mapped[str] = mapped_column(String(12), nullable=False)
+    initial_balance: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    max_order_amount: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    max_fee_percentage: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    daily_limit: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    monthly_limit: Mapped[Decimal | None] = mapped_column(Numeric(30, 12))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class PaperRequest(Base):
+    """Resultado persistido de una solicitud PAPER para reintentos seguros."""
+
+    __tablename__ = "paper_requests"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    payload_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    executed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    asset: Mapped[str] = mapped_column(String, nullable=False)
+    amount_spent: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    asset_received: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    fee: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    operation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operations.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )
 
 

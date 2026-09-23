@@ -1,11 +1,23 @@
 from fastapi import FastAPI, HTTPException, Depends
-from app.math.calculations import calculate_portfolio_summary
+from decimal import Decimal
+from typing import Literal
+
+from sqlalchemy.exc import IntegrityError
+
+from app.math.calculations import calculate_buy_summaries
 from app.api.schemas import (
     StrategyCreate,
     OperationCreate,
     PaperBuyRequest,
+    PaperScenarioCreate,
 )
-from app.core.paper_trading import execute_and_record_paper_buy
+from app.core.paper_scenarios import (
+    create_paper_scenario,
+    get_paper_scenario,
+    get_paper_scenarios,
+    paper_scenario_snapshot,
+)
+from app.core.paper_trading import PaperRequestConflict, execute_configured_paper_buy
 from app.ledger.repository import create_operation, get_operations
 from app.database import models
 from app.database.database import Base, engine, get_db
@@ -122,6 +134,12 @@ def add_operation(
     Registra manualmente una operación financiera.
     """
 
+    if (
+        operation.strategy_id is not None
+        and get_strategy(db, operation.strategy_id) is None
+    ):
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
     return create_operation(
         db=db,
         operation_type=operation.operation_type,
@@ -134,18 +152,53 @@ def add_operation(
         withdrawal_fee=operation.withdrawal_fee,
         network_fee=operation.network_fee,
         mode=operation.mode,
-        source=operation.source,
+        source="MANUAL",
         status=operation.status,
         exchange=operation.exchange,
         strategy_id=operation.strategy_id,
     )
 
 @app.get("/portfolio/summary")
-def portfolio_summary(db = Depends(get_db)):
-    """Resume compras y comisiones del Ledger sin consultar precios de mercado."""
-    operations = get_operations(db)
+def portfolio_summary(
+    mode: Literal["PAPER", "LIVE"] = "PAPER",
+    asset: str | None = None,
+    quote_currency: str | None = None,
+    db = Depends(get_db),
+):
+    """Resume un único par y modo; exige filtros si hay varios pares."""
+    summaries = calculate_buy_summaries(get_operations(db), mode=mode)
+    if asset is not None:
+        summaries = [item for item in summaries if item["asset"] == asset]
+    if quote_currency is not None:
+        summaries = [
+            item for item in summaries
+            if item["quote_currency"] == quote_currency
+        ]
 
-    return calculate_portfolio_summary(operations)
+    if len(summaries) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Specify asset and quote_currency, or use /portfolio/buys",
+        )
+
+    if summaries:
+        return {"mode": mode, **summaries[0]}
+
+    return {
+        "mode": mode,
+        "asset": asset,
+        "quote_currency": quote_currency,
+        "total_invested": Decimal("0"),
+        "total_asset_received": Decimal("0"),
+        "total_fees": Decimal("0"),
+        "average_buy_price": Decimal("0"),
+    }
+
+
+@app.get("/portfolio/buys")
+def portfolio_buys(mode: Literal["PAPER", "LIVE"] = "PAPER", db = Depends(get_db)):
+    """Lista compras ejecutadas por par en PAPER o LIVE, sin mezclar monedas."""
+    return calculate_buy_summaries(get_operations(db), mode=mode)
 
 @app.post("/paper/buy")
 def paper_buy(
@@ -153,26 +206,58 @@ def paper_buy(
     db = Depends(get_db)
 ):
     """
-    Ejecuta una compra simulada.
+    Evalúa una compra simulada con capital y límites guardados en el servidor.
 
     Guard debe autorizar la operación antes de que
     Paper Trading pueda registrarla en el Ledger.
     """
 
-    result = execute_and_record_paper_buy(
-        db=db,
-        asset=request.asset,
-        quote_currency=request.quote_currency,
-        order_amount=request.order_amount,
-        price=request.price,
-        available_budget=request.available_budget,
-        max_order_amount=request.max_order_amount,
-        estimated_fee=request.estimated_fee,
-        max_fee_percentage=request.max_fee_percentage,
-        exchange=request.exchange,
-        strategy_id=request.strategy_id,
-        daily_limit=request.daily_limit,
-        monthly_limit=request.monthly_limit,
-    )
+    scenario = get_paper_scenario(db, request.quote_currency)
+    if scenario is None:
+        raise HTTPException(status_code=404, detail="Paper scenario not found")
+
+    try:
+        result = execute_configured_paper_buy(
+            db=db,
+            scenario=scenario,
+            request_id=str(request.request_id),
+            asset=request.asset,
+            order_amount=request.order_amount,
+            price=request.price,
+            estimated_fee=request.estimated_fee,
+            exchange=request.exchange,
+        )
+    except PaperRequestConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return result
+
+
+@app.post("/paper/scenarios", status_code=201)
+def add_paper_scenario(request: PaperScenarioCreate, db = Depends(get_db)):
+    """Crea una configuración PAPER inmutable para una moneda cotizada."""
+    if get_paper_scenario(db, request.quote_currency) is not None:
+        raise HTTPException(status_code=409, detail="Paper scenario already exists")
+
+    try:
+        scenario = create_paper_scenario(db=db, **request.model_dump())
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Paper scenario already exists") from exc
+
+    return paper_scenario_snapshot(db, scenario)
+
+
+@app.get("/paper/scenarios")
+def list_paper_scenarios(db = Depends(get_db)):
+    """Lista el capital, límites y saldo de cada escenario PAPER."""
+    return [paper_scenario_snapshot(db, item) for item in get_paper_scenarios(db)]
+
+
+@app.get("/paper/scenarios/{quote_currency}")
+def read_paper_scenario(quote_currency: str, db = Depends(get_db)):
+    """Muestra configuración y saldo restante de un escenario PAPER."""
+    scenario = get_paper_scenario(db, quote_currency)
+    if scenario is None:
+        raise HTTPException(status_code=404, detail="Paper scenario not found")
+    return paper_scenario_snapshot(db, scenario)
