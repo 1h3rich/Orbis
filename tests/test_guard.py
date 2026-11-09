@@ -1,8 +1,11 @@
+from decimal import Decimal, localcontext
+
 from app.guard.risk import (
     check_budget,
     check_order_limit,
     check_fee_limit,
     evaluate_order,
+    evaluate_sell,
 )
 
 
@@ -113,4 +116,18 @@ def test_evaluate_order_blocks_high_fee():
     )
 
     assert result.allowed is False
+    assert result.reason == "Estimated fee exceeds allowed percentage"
+
+
+def test_sell_fee_limit_uses_unrounded_gross_value():
+    quantity = Decimal("123456789012345678.123456789012")
+    with localcontext() as context:
+        context.prec = 80
+        gross = quantity * Decimal("0.9")
+        fee = gross * Decimal("0.02") + Decimal("0.000000000001")
+    result = evaluate_sell(
+        quantity=quantity, price=Decimal("0.9"), estimated_fee=fee,
+        max_fee_percentage=Decimal("2"), available_quantity=quantity,
+    )
+    assert not result.allowed
     assert result.reason == "Estimated fee exceeds allowed percentage"

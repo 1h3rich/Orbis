@@ -8,8 +8,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.paper_trading import execute_and_record_paper_buy
 from app.database.database import Base
 from app.guard.risk import (
-    check_daily_limit,
-    check_monthly_limit,
+    check_daily_limit, check_fee_limit, check_monthly_limit,
 )
 from app.ledger.repository import (
     create_operation,
@@ -62,6 +61,36 @@ def test_monthly_limit_blocks_order():
 
     assert result.allowed is False
     assert result.reason == "Monthly spending limit exceeded"
+
+
+def test_daily_limit_does_not_lose_last_decimal_of_large_amount():
+    result = check_daily_limit(
+        order_amount=Decimal("0.000000000002"),
+        daily_spent=Decimal("123456789012345678.123456789011"),
+        daily_limit=Decimal("123456789012345678.123456789012"),
+    )
+    assert not result.allowed
+    assert result.reason == "Daily spending limit exceeded"
+
+
+def test_monthly_limit_does_not_lose_last_decimal_of_large_amount():
+    result = check_monthly_limit(
+        order_amount=Decimal("0.000000000002"),
+        monthly_spent=Decimal("123456789012345678.123456789011"),
+        monthly_limit=Decimal("123456789012345678.123456789012"),
+    )
+    assert not result.allowed
+    assert result.reason == "Monthly spending limit exceeded"
+
+
+def test_fee_limit_does_not_round_away_excess_at_ledger_scale():
+    result = check_fee_limit(
+        order_amount=Decimal("500000000000000000"),
+        estimated_fee=Decimal("10000000000000000.000000000001"),
+        max_fee_percentage=Decimal("2"),
+    )
+    assert not result.allowed
+    assert result.reason == "Estimated fee exceeds allowed percentage"
 
 
 def test_daily_spent_reads_ledger():
@@ -310,5 +339,53 @@ def test_paper_buy_blocked_by_accumulated_monthly_limit():
 
     assert result.executed is False
     assert result.reason == "Monthly spending limit exceeded"
+
+    db.close()
+
+
+def test_daily_spent_is_exact_decimal_not_float_artifact():
+    """
+    Regresión B1: las sumas del Ledger deben ser exactas.
+
+    Antes se construía `Decimal(str(func.sum(...)))`, que cuando la agregación
+    SQL devuelve `float` produce valores como `0.30000000000000004`.
+    """
+    from app.ledger.repository import get_net_cash_moved
+
+    db = create_test_db()
+
+    for _ in range(3):
+        create_operation(
+            db=db,
+            operation_type="BUY",
+            asset="BTC",
+            quote_currency="EUR",
+            amount_spent=Decimal("0.1"),
+            asset_received=Decimal("0.000001"),
+            price=Decimal("100000"),
+            mode="PAPER",
+        )
+
+    spent = get_daily_spent(db=db, mode="PAPER")
+
+    assert isinstance(spent, Decimal)
+    # Decimal("0.300000000000") == Decimal("0.3"), pero
+    # Decimal("0.30000000000000004") != Decimal("0.3").
+    assert spent == Decimal("0.3")
+    assert spent - Decimal("0.3") == Decimal("0")
+
+    # Una venta devuelve caja exacta: ΣSELL − ΣBUY = 0.3 − 0.1 = 0.2 negativo
+    create_operation(
+        db=db,
+        operation_type="SELL",
+        asset="BTC",
+        quote_currency="EUR",
+        amount_spent=Decimal("0.1"),
+        asset_received=Decimal("0.000001"),
+        price=Decimal("100000"),
+        mode="PAPER",
+    )
+    net = get_net_cash_moved(db=db, mode="PAPER", quote_currency="EUR")
+    assert net == Decimal("-0.2")
 
     db.close()

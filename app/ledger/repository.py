@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database.models import Operation
@@ -11,8 +10,25 @@ def to_decimal(value) -> Decimal:
     """
     Convierte un valor numérico a Decimal evitando
     arrastrar errores binarios propios de float.
+
+    Nunca debe aplicarse a un ``float`` obtenido de una agregación SQL
+    (``func.sum``): ver ``_sum_amounts``.
     """
     return Decimal(str(value))
+
+
+def _sum_amounts(values) -> Decimal:
+    """
+    Suma importes del Ledger de forma exacta en Python.
+
+    B1: las agregaciones SQL (``func.sum``) pueden devolver ``float`` y
+    ``Decimal(str(float))`` arrastra el error binario (p. ej.
+    ``0.30000000000000004``). Aquí se suman los ``Decimal`` tal cual salen
+    de la columna ``Numeric``.
+    """
+    with localcontext() as context:
+        context.prec = 80
+        return sum((to_decimal(value) for value in values), Decimal("0"))
 
 
 def create_operation(
@@ -69,8 +85,86 @@ def get_operations(db: Session):
     """
     Devuelve todas las operaciones registradas
     en el Ledger.
+
+    H10: el orden es determinista (``timestamp``, ``id``) para que las
+    reconstrucciones de saldos y carteras sean reproducibles.
     """
-    return db.query(Operation).all()
+    return (
+        db.query(Operation)
+        .order_by(Operation.timestamp.asc(), Operation.id.asc())
+        .all()
+    )
+
+
+def list_paper_operations(
+    db: Session,
+    asset: str | None = None,
+    quote_currency: str | None = None,
+    side: str | None = None,
+    strategy_id: int | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> list[Operation]:
+    """
+    Lista operaciones PAPER con filtros opcionales y orden determinista
+    ``timestamp``, ``id`` (ascendente).
+
+    ``side`` acepta ``BUY`` o ``SELL``; ``start`` es inclusivo y ``end`` exclusivo.
+    """
+    query = db.query(Operation).filter(Operation.mode == "PAPER")
+
+    if asset is not None:
+        query = query.filter(Operation.asset == asset)
+    if quote_currency is not None:
+        query = query.filter(Operation.quote_currency == quote_currency)
+    if side is not None:
+        query = query.filter(Operation.operation_type == side.upper())
+    if strategy_id is not None:
+        query = query.filter(Operation.strategy_id == strategy_id)
+    if start is not None:
+        query = query.filter(Operation.timestamp >= start)
+    if end is not None:
+        query = query.filter(Operation.timestamp < end)
+
+    return query.order_by(Operation.timestamp.asc(), Operation.id.asc()).all()
+
+
+def get_net_cash_moved(
+    db: Session,
+    mode: str,
+    quote_currency: str,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> Decimal:
+    """
+    Devuelve el movimiento neto de caja: ``ΣSELL − ΣBUY`` de las operaciones
+    EXECUTED de un modo y moneda. En caja: ``initial_balance + este valor``.
+
+    La suma se hace en Python sobre ``Decimal`` (B1), nunca con ``func.sum``.
+    """
+    query = db.query(
+        Operation.operation_type,
+        Operation.amount_spent,
+    ).filter(
+        Operation.status == "EXECUTED",
+        Operation.operation_type.in_(("BUY", "SELL")),
+        Operation.mode == mode,
+        Operation.quote_currency == quote_currency,
+    )
+    if since is not None:
+        query = query.filter(Operation.timestamp >= since)
+    if until is not None:
+        query = query.filter(Operation.timestamp < until)
+
+    with localcontext() as context:
+        context.prec = 80
+        net = Decimal("0")
+        for operation_type, amount in query.all():
+            if operation_type == "SELL":
+                net += to_decimal(amount)
+            else:
+                net -= to_decimal(amount)
+        return net
 
 
 def get_total_spent(
@@ -78,8 +172,15 @@ def get_total_spent(
     mode: str,
     quote_currency: str,
     since: datetime | None = None,
+    until: datetime | None = None,
 ) -> Decimal:
-    """Suma compras ejecutadas de un modo y moneda desde un instante dado."""
+    """
+    Suma compras ejecutadas de un modo y moneda desde un instante dado.
+
+    Sigue filtrando solo ``BUY`` para no alterar el significado histórico de
+    ``total_spent``/``available_balance``; la caja real (compras menos ventas)
+    se calcula con ``get_net_cash_moved``.
+    """
     query = db.query(Operation.amount_spent).filter(
         Operation.operation_type == "BUY",
         Operation.status == "EXECUTED",
@@ -88,8 +189,10 @@ def get_total_spent(
     )
     if since is not None:
         query = query.filter(Operation.timestamp >= since)
+    if until is not None:
+        query = query.filter(Operation.timestamp < until)
     amounts = query.all()
-    return sum((to_decimal(amount) for (amount,) in amounts), Decimal("0"))
+    return _sum_amounts(amount for (amount,) in amounts)
 
 
 def get_spent_between(
@@ -105,11 +208,12 @@ def get_spent_between(
     ejecutadas dentro de un periodo concreto.
 
     Separa PAPER y LIVE; opcionalmente limita el total a una moneda cotizada.
+
+    B1: no se usa ``func.sum``; los importes se leen fila a fila y se suman
+    como ``Decimal`` exacto.
     """
 
-    query = db.query(
-        func.sum(Operation.amount_spent)
-    ).filter(
+    query = db.query(Operation.amount_spent).filter(
         Operation.operation_type == "BUY",
         Operation.status == "EXECUTED",
         Operation.mode == mode,
@@ -122,12 +226,7 @@ def get_spent_between(
     if since is not None:
         query = query.filter(Operation.timestamp >= since)
 
-    total = query.scalar()
-
-    if total is None:
-        return Decimal("0")
-
-    return Decimal(str(total))
+    return _sum_amounts(amount for (amount,) in query.all())
 
 
 def get_daily_spent(

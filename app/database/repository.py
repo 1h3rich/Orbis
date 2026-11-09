@@ -1,6 +1,16 @@
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database.models import Strategy
+from app.database.models import Operation, Strategy
+
+
+class StrategyInUseError(ValueError):
+    """La definición debe conservarse para explicar operaciones ya registradas."""
+
+
+STRATEGY_IN_USE_DETAIL = (
+    "La estrategia tiene operaciones registradas; desactívala para conservar el historial"
+)
 
 
 def create_strategy(
@@ -61,13 +71,24 @@ def update_strategy(
     return strategy
 
 def delete_strategy(db: Session, strategy_id: int):
-    """Borra la estrategia; devuelve False si el ID no existe."""
+    """Borra sólo estrategias sin operaciones; conserva la procedencia PAPER."""
     strategy = get_strategy(db, strategy_id)
 
     if strategy is None:
         return False
 
+    if db.query(Operation.id).filter(Operation.strategy_id == strategy_id).first():
+        raise StrategyInUseError(STRATEGY_IN_USE_DETAIL)
+
     db.delete(strategy)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # Otro escritor pudo registrar una operación entre la consulta y el
+        # DELETE. La FK protege el dato; la API debe explicar el conflicto.
+        if db.query(Operation.id).filter(Operation.strategy_id == strategy_id).first():
+            raise StrategyInUseError(STRATEGY_IN_USE_DETAIL) from exc
+        raise
 
     return True

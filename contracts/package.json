@@ -1,0 +1,26 @@
+{
+    "name": "orbis-bnb-executor",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=22"
+    },
+    "scripts": {
+        "build": "node compiler.mjs",
+        "test": "node --test --test-concurrency=1",
+        "format:check": "prettier --check src/BoundedSwapExecutor.sol test/fixtures.sol test/executor.test.mjs support/deployment-fixture.mjs support/anvil-provider.mjs compiler.mjs"
+    },
+    "dependencies": {
+        "@openzeppelin/contracts": "5.6.1",
+        "@uniswap/v4-core": "1.0.2"
+    },
+    "devDependencies": {
+        "@foundry-rs/anvil": "1.7.1",
+        "ganache": "7.9.2",
+        "prettier": "3.9.10",
+        "prettier-plugin-solidity": "2.4.1",
+        "solc": "0.8.38",
+        "viem": "2.57.16"
+    }
+}

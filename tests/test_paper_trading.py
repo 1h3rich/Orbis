@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.paper_trading import (
     execute_paper_buy,
+    execute_paper_sell,
     execute_and_record_paper_buy,
 )
 from app.database.database import Base
@@ -80,6 +81,85 @@ def test_paper_buy_blocks_invalid_price():
 
     assert result.executed is False
     assert result.reason == "Asset price must be greater than zero"
+
+
+def test_paper_buy_rejects_cash_that_would_round_to_zero():
+    result = execute_paper_buy(
+        asset="BTC", order_amount=Decimal("0.0000000000001"),
+        price=Decimal("0.000000000001"), available_budget=Decimal("1"),
+        max_order_amount=Decimal("1"), estimated_fee=Decimal("0"),
+        max_fee_percentage=Decimal("2"),
+    )
+    assert not result.executed
+    assert result.reason == "Order input outside ledger precision"
+
+
+def test_paper_sell_rejects_proceeds_that_would_round_to_zero():
+    result = execute_paper_sell(
+        asset="BTC", quantity=Decimal("0.000000000001"),
+        price=Decimal("0.000000000001"), available_quantity=Decimal("1"),
+        estimated_fee=Decimal("0"), max_fee_percentage=Decimal("2"),
+    )
+    assert not result.executed
+    assert result.reason == "Order proceeds below ledger precision"
+
+
+def test_paper_buy_never_rounds_received_units_above_affordable_amount():
+    result = execute_paper_buy(
+        asset="BTC", order_amount=Decimal("2"), price=Decimal("3"),
+        available_budget=Decimal("10"), max_order_amount=Decimal("10"),
+        estimated_fee=Decimal("0"), max_fee_percentage=Decimal("2"),
+    )
+    assert result.executed
+    assert result.asset_received == Decimal("0.666666666666")
+    assert result.asset_received * result.price <= result.amount_spent - result.fee
+
+
+def test_paper_buy_blocks_large_relative_rounding_loss():
+    result = execute_paper_buy(
+        asset="BTC", order_amount=Decimal("0.00000000019"),
+        price=Decimal("100"), available_budget=Decimal("1"),
+        max_order_amount=Decimal("1"), estimated_fee=Decimal("0"),
+        max_fee_percentage=Decimal("2"),
+    )
+    assert not result.executed
+    assert result.reason == "Order rounding loss exceeds limit"
+
+
+def test_paper_sell_never_rounds_cash_proceeds_above_trade_value():
+    result = execute_paper_sell(
+        asset="BTC", quantity=Decimal("0.000000000002"),
+        price=Decimal("0.8"), available_quantity=Decimal("1"),
+        estimated_fee=Decimal("0"), max_fee_percentage=Decimal("2"),
+    )
+    assert result.executed
+    assert result.amount_spent == Decimal("0.000000000001")
+    assert result.amount_spent <= result.asset_received * result.price - result.fee
+
+
+def test_paper_buy_keeps_all_ledger_digits_before_quantizing():
+    amount = Decimal("999999999999999999.999999999999")
+    result = execute_paper_buy(
+        asset="BTC", order_amount=amount, price=Decimal("2"),
+        available_budget=amount, max_order_amount=amount,
+        estimated_fee=Decimal("0"), max_fee_percentage=Decimal("2"),
+    )
+    assert result.executed
+    assert result.asset_received == Decimal("499999999999999999.999999999999")
+    with localcontext() as context:
+        context.prec = 80
+        assert result.asset_received * result.price <= amount
+
+
+def test_paper_sell_keeps_all_ledger_digits_before_quantizing():
+    quantity = Decimal("999999999999999999.999999999999")
+    result = execute_paper_sell(
+        asset="BTC", quantity=quantity, price=Decimal("0.9"),
+        available_quantity=quantity, estimated_fee=Decimal("0"),
+        max_fee_percentage=Decimal("2"),
+    )
+    assert result.executed
+    assert result.amount_spent == Decimal("899999999999999999.999999999999")
 
 
 def test_paper_buy_is_recorded_in_ledger():

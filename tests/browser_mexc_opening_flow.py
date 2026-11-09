@@ -1,0 +1,53 @@
+"""Inventario inicial MEXC en UI con proveedor ficticio y bóveda temporal."""
+
+from playwright.sync_api import expect, sync_playwright
+
+
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(headless=True)
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.goto("http://127.0.0.1:8799/ui/#/real")
+    page.locator("#real-passphrase").fill("opening browser secret")
+    page.locator("#real-passphrase-confirm").fill("opening browser secret")
+    page.get_by_role("button", name="Crear bóveda").click()
+    page.locator("#real-new-account").wait_for()
+    page.locator('#real-new-account [name="name"]').fill("MEXC inicial")
+    page.locator('#real-new-account [name="base_currency"]').fill("USDT")
+    page.get_by_role("button", name="Crear cuenta").click()
+    page.locator("#real-mexc-connect summary").click()
+    page.locator('#real-mexc-form [name="api_key"]').fill("browser-test-key")
+    page.locator('#real-mexc-form [name="secret_key"]').fill("browser-test-secret")
+    page.get_by_role("button", name="Consultar MEXC").click()
+    page.locator("#real-mexc-opening").wait_for(state="visible")
+    page.locator("#real-mexc-opening summary").click()
+    page.get_by_role("button", name="Leer saldos").click()
+    form = page.locator("#real-mexc-opening-form")
+    form.wait_for()
+    assert form.locator('[data-opening-asset="USDT"]').is_disabled()
+    form.locator('[data-opening-asset="BTC"]').fill("50000.123456789")
+    form.locator('[name="costs_ack"]').check()
+    form.get_by_role("button", name="Vista previa").click()
+    preview = page.locator("#real-mexc-opening-preview")
+    expect(preview).to_contain_text("Costes declarados por ti")
+    expect(preview).to_contain_text("0.26")
+    assert page.get_by_text("Todavía no hay movimientos.").count() == 1
+    confirm = page.locator("#real-mexc-opening-commit")
+    confirm.locator('[name="confirmation"]').fill("IMPORTAR_SALDO_INICIAL")
+    confirm.get_by_role("button", name="Registrar inventario").click()
+    expect(page.locator("#real-notice")).to_contain_text("2 asiento(s)")
+    expect(page.locator("#real-history")).to_contain_text("Inventario inicial MEXC Spot")
+    expect(page.locator("#real-history")).to_contain_text("Saldo inicial MEXC Spot")
+    page.get_by_role("button", name="Comparar inventario").click()
+    expect(page.locator("#real-mexc-comparison")).to_contain_text("Igual")
+    expect(page.locator("#real-mexc-comparison")).to_contain_text("Asignación local")
+    expect(page.locator("#real-mexc-comparison")).to_contain_text("vínculo de cuenta no verificado")
+    page.get_by_role("button", name="Bloquear").click()
+    page.locator("#real-passphrase").fill("opening browser secret")
+    page.get_by_role("button", name="Desbloquear").click()
+    expect(page.locator("#real-history")).to_contain_text("Inventario inicial MEXC Spot")
+    assert page.locator("#real-mexc-opening").is_hidden()
+    assert not errors, errors
+    print("Browser MEXC opening flow passed: declared cost, atomic booking, compare, reload")
+    browser.close()

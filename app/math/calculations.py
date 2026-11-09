@@ -1,8 +1,26 @@
-from decimal import Decimal
+"""Cálculos numéricos de Orbis.
+
+Núcleo PAPER en ``Decimal`` exacto: ``calculate_buy_summaries`` y
+``calculate_average_cost`` (vía ``app/math/positions.py``). Las 7 funciones
+históricas en ``float`` que siguen (
+``calculate_total_invested``, ``calculate_average_buy_price``,
+``calculate_position_value``, ``calculate_profit_loss``,
+``calculate_return_percentage``, ``calculate_total_fees``,
+``calculate_net_investment``) se conservan solo por compatibilidad con
+consumidores y pruebas existentes: están marcadas como históricas en sus
+docstrings, ningún código nuevo de la aplicación las usa (verificado por
+búsqueda: solo las referencian ``tests/test_math.py`` y sus definiciones) y
+no deben emplearse en código nuevo del motor PAPER. No se cambian sus firmas
+para no romper pruebas.
+"""
+
+from decimal import Decimal, localcontext
 
 
 def calculate_total_invested(amounts: list[float]) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Suma los importes recibidos; una lista vacía produce 0.
 
     Ejemplo:
@@ -16,6 +34,8 @@ def calculate_average_buy_price(
     total_asset_received: float
 ) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Divide lo invertido entre unidades recibidas; devuelve 0 si no hay unidades.
 
     Ejemplo:
@@ -31,6 +51,8 @@ def calculate_position_value(
     current_price: float
 ) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Multiplica unidades por precio; devuelve 0 ante un valor negativo.
 
     Ejemplo:
@@ -47,6 +69,8 @@ def calculate_profit_loss(
     current_value: float
 ) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Resta el capital invertido al valor actual, sin descontar comisiones.
 
     Resultado positivo = beneficio.
@@ -62,6 +86,8 @@ def calculate_return_percentage(
     current_value: float
 ) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Calcula (valor actual - invertido) / invertido * 100.
 
     Si el capital invertido es cero o negativo, devuelve 0.
@@ -78,6 +104,8 @@ def calculate_return_percentage(
 
 def calculate_total_fees(fees: list[float]) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Suma las comisiones recibidas, sin distinguir su moneda.
 
     Puede incluir:
@@ -93,6 +121,8 @@ def calculate_net_investment(
     total_fees: float
 ) -> float:
     """
+    Histórica (float): no usar en código nuevo del motor PAPER (usar Decimal).
+
     Suma el importe invertido y las comisiones recibidas.
 
     Ejemplo:
@@ -123,12 +153,52 @@ def calculate_portfolio_summary(operations: list) -> dict:
     }
 
 
+def calculate_average_cost(invested, quantity):
+    """
+    Coste medio unitario de una posición.
+
+    Acepta ``float`` o ``Decimal`` y devuelve siempre el mismo tipo que ha
+    recibido, de modo que las funciones históricas en ``float`` siguen
+    funcionando igual y el núcleo PAPER puede usar ``Decimal`` exacto.
+
+    Si no hay unidades, devuelve cero en el tipo de entrada.
+
+    Ejemplo:
+    100 € invertidos / 0.001 BTC = 100000 €/BTC
+    """
+    uses_decimal = isinstance(invested, Decimal) or isinstance(quantity, Decimal)
+    zero = Decimal("0") if uses_decimal else 0.0
+
+    if quantity is None or quantity <= 0:
+        return zero
+
+    if uses_decimal:
+        decimal_invested = invested if isinstance(invested, Decimal) else Decimal(str(invested))
+        decimal_quantity = quantity if isinstance(quantity, Decimal) else Decimal(str(quantity))
+        with localcontext() as context:
+            # Los libros antiguos calcularon costes corrientes con 28
+            # dígitos. Elevarlos indiscriminadamente modifica P/L históricos
+            # por residuos de división periódica; sólo hace falta ampliar el
+            # contexto si el importe y su escala no caben en 28.
+            integer_digits = max(0, decimal_invested.adjusted() + 1)
+            scale = max(0, -decimal_invested.as_tuple().exponent)
+            context.prec = 80 if integer_digits + scale + 2 > 28 else 28
+            return decimal_invested / decimal_quantity
+    return invested / quantity
+
+
 def calculate_buy_summaries(operations: list, mode: str) -> list[dict]:
     """Resume compras ejecutadas por activo y moneda para un modo concreto.
 
     Muestra importes históricos de compra, no saldos actuales ni P/L. Las
     comisiones se atribuyen solo a las compras del mismo par y modo.
     """
+    with localcontext() as context:
+        context.prec = 80
+        return _calculate_buy_summaries(operations, mode)
+
+
+def _calculate_buy_summaries(operations: list, mode: str) -> list[dict]:
     groups: dict[tuple[str, str], dict] = {}
 
     for operation in operations:

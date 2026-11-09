@@ -108,8 +108,8 @@ def test_portfolio_api_requires_one_pair_and_separates_modes():
         assert summaries.status_code == 200
         assert [item["asset"] for item in summaries.json()] == ["BTC", "ETH"]
         assert ambiguous.status_code == 400
-        assert live.status_code == 200
-        assert Decimal(str(live.json()["total_invested"])) == Decimal("700")
+        assert live.status_code == 410
+        assert "700" not in live.text
         assert Decimal(str(btc.json()["total_invested"])) == Decimal("100")
     finally:
         if previous_override is None:

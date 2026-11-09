@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbis · Mercado, laboratorio y patrimonio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2308100f'/%3E%3Ctext x='8' y='12' font-size='11' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%239ce5c0'%3EO%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/ui/app.css?v=134">
+</head>
+<body>
+<header class="cabecera-principal">
+  <a class="marca-orbis" href="#/inicio" aria-label="Orbis, ir al inicio">
+    <span class="marca-orbis__simbolo" aria-hidden="true">O</span>
+    <span>ORBIS<small>laboratorio de mercado</small></span>
+  </a>
+  <nav class="navegacion-principal" aria-label="Secciones">
+    <a href="#/inicio">Inicio</a>
+    <a href="#/estudio">Estudio</a>
+    <a href="#/laboratorio">Laboratorio</a>
+    <a href="#/operativa" data-help="Operaciones y estrategias con dinero ficticio. Ninguna orden sale a un exchange.">Simulación PAPER</a>
+    <a href="#/real" data-help="Patrimonio local y operativa MEXC REAL con autorización expresa, límites y STOP. Conectar View no envía órdenes.">Patrimonio registrado</a>
+    <a href="#/alertas">Alertas</a>
+    <a href="#/config">Configuración</a>
+  </nav>
+  <div class="controles-globales" role="group" aria-label="Fuente de precios">
+    <button id="global-search-open" class="global-search-trigger" type="button" aria-haspopup="dialog" aria-controls="global-search-dialog" data-help="Busca mercados y secciones. Atajo: Ctrl+K o ⌘K.">Buscar <kbd>⌘K</kbd></button>
+    <label class="selector-fuente">Fuente de gráficos
+      <select id="provider-sel" aria-label="Fuente de velas predeterminada">
+        <option value="auto">Automática</option>
+        <option value="kraken">Kraken</option>
+        <option value="binance">Binance</option>
+        <option value="coinbase">Coinbase</option>
+        <option value="okx">OKX</option>
+        <option value="bybit">Bybit</option>
+        <option value="mexc">MEXC</option>
+        <option value="kucoin">KuCoin</option>
+        <option value="gate">Gate</option>
+        <option value="bitget">Bitget</option>
+        <option value="grvt">GRVT</option>
+        <option value="bitstamp">Bitstamp</option>
+      </select>
+    </label>
+  </div>
+  <p class="estado-mercado" id="mkt-status" aria-live="off">Consultando el mercado…</p>
+</header>
+<dialog id="global-search-dialog" class="global-search-dialog" aria-label="Búsqueda de Orbis">
+  <div class="global-search-box">
+    <label for="global-search-input">Buscar en Orbis</label>
+    <input id="global-search-input" type="search" autocomplete="off" spellcheck="false" placeholder="BTC, estrategia, compra…" aria-controls="global-search-results">
+    <div id="global-search-results" class="global-search-results" role="listbox" aria-label="Resultados"></div>
+    <p class="global-search-hint">↑ ↓ elegir · Intro abrir · Esc cerrar</p>
+  </div>
+</dialog>
+<nav id="sim-nav" class="navegacion-simulacion" aria-label="Herramientas de simulación" hidden>
+  <a href="#/portfolio" data-help="Saldo y posiciones ficticias, separados del patrimonio registrado.">Saldo y posiciones</a>
+  <a href="#/spot-paper" data-help="Seguimiento de estrategias MEXC Spot con capital ficticio.">Spot</a>
+  <a href="#/perpetuos" data-help="Posiciones y estrategias GRVT con capital ficticio.">GRVT</a>
+  <a href="#/dca">DCA</a>
+  <a href="#/estrategias">Planes</a>
+  <a href="#/ledger">Movimientos</a>
+</nav>
+<div id="modeline" class="sr-only" role="status"></div>
+<main id="view"></main>
+<footer class="pie-pagina">
+  <span>Orbis · datos locales</span>
+  <span id="runtime-status" class="runtime-status" role="status" hidden></span>
+  <details class="ajustes-conexion">
+    <summary data-help="Sólo cambia la dirección si Orbis se sirve desde otro equipo de tu red.">Conexión</summary>
+    <label class="direccion-servidor">Servidor
+      <input id="api-base" type="text" placeholder="Este equipo" autocomplete="off">
+    </label>
+  </details>
+</footer>
+<div id="toasts" aria-live="polite" aria-atomic="false"></div>
+<script src="/ui/vendor/lightweight-charts.standalone.production.js?v=19"></script>
+<script src="/ui/help.js?v=1"></script>
+<script src="/ui/market-chart-history.js?v=1"></script>
+<script src="/ui/estudio.js?v=56"></script>
+<script src="/ui/mexc-journey-report.js?v=2"></script>
+<script src="/ui/mexc-direct-journeys.js?v=2"></script>
+<script src="/ui/transfer-history-focus.js?v=1"></script>
+<script src="/ui/wallet-funding.js?v=17"></script>
+<script src="/ui/mexc-withdrawal.js?v=10"></script>
+<script src="/ui/dex-receipt-order.js?v=3"></script>
+<script src="/ui/economic-review.js?v=4"></script>
+<script src="/ui/external-review.js?v=1"></script>
+<script src="/ui/wallet-swap.js?v=10"></script>
+<script src="/ui/wallet-dex-operator.js?v=3"></script>
+<script src="/ui/wallet-dex-funding-cancellation.js?v=1"></script>
+<script src="/ui/wallet-dex-gas.js?v=4"></script>
+<script src="/ui/wallet-dex-cancellation.js?v=1"></script>
+<script src="/ui/wallet-dex-return.js?v=4"></script>
+<script src="/ui/deployment-resolution.js?v=6"></script>
+<script src="/ui/wallet-dex-setup.js?v=6"></script>
+<script src="/ui/research-download.js?v=2"></script>
+<script src="/ui/real-fill-chart.js?v=4"></script>
+<script src="/ui/dex-bot-chart.js?v=3"></script>
+<script src="/ui/wallet-dex-runs.js?v=18"></script>
+<script src="/ui/dex-receipt-booking.js?v=4"></script>
+<script src="/ui/wallet-dex-bot.js?v=14"></script>
+<script src="/ui/wallet.js?v=35"></script>
+<script src="/ui/mexc-trading.js?v=11"></script>
+<script src="/ui/mexc-bot-chart.js?v=4"></script>
+<script src="/ui/mexc-bots.js?v=24"></script>
+<script src="/ui/grvt-testnet.js?v=1"></script>
+<script src="/ui/grvt-oco.js?v=1"></script>
+<script src="/ui/grvt-bracket.js?v=17"></script>
+<script src="/ui/grvt-bot.js?v=8"></script>
+<script src="/ui/grvt-perp-review-evidence.js?v=1"></script>
+<script src="/ui/grvt-mainnet-bots.js?v=9"></script>
+<script src="/ui/grvt-mainnet-limit.js?v=6"></script>
+<script src="/ui/grvt-mainnet-chart.js?v=4"></script>
+<script src="/ui/grvt-mainnet.js?v=15"></script>
+<script src="/ui/perp-real-review.js?v=2"></script>
+<script src="/ui/portfolio-history.js?v=2"></script>
+<script src="/ui/real.js?v=113"></script>
+<script src="/ui/chart-range.js?v=9"></script>
+<script src="/ui/research-reference.js?v=1"></script>
+<script src="/ui/perp-datasets.js?v=3"></script>
+<script src="/ui/perp-rule-comparison.js?v=2"></script>
+<script src="/ui/perp-run-comparison.js?v=1"></script>
+<script src="/ui/perp-cost-comparison.js?v=1"></script>
+<script src="/ui/perp-margin-comparison.js?v=1"></script>
+<script src="/ui/perp-experiments.js?v=13"></script>
+<script src="/ui/perp-validation.js?v=9"></script>
+<script src="/ui/lab-parameter-map.js?v=1"></script>
+<script src="/ui/perp-optimization.js?v=4"></script>
+<script src="/ui/perp-gap-close.js?v=2"></script>
+<script src="/ui/perp-observed.js?v=8"></script>
+<script src="/ui/lab-ai-archive.js?v=3"></script>
+<script src="/ui/lab.js?v=70"></script>
+<script src="/ui/dca.js?v=31"></script>
+<script src="/ui/signal-frequency.js?v=2"></script>
+<script src="/ui/perp.js?v=46"></script>
+<script src="/ui/spot-paper.js?v=37"></script>
+<script src="/ui/decimal.js?v=3"></script>
+<script src="/ui/storage-protection.js?v=2"></script>
+<script src="/ui/manual-paper.js?v=1"></script>
+<script src="/ui/home-workspaces.js?v=2"></script>
+<script src="/ui/market-alerts.js?v=1"></script>
+<script src="/ui/app.js?v=102"></script>
+<script src="/ui/search.js?v=5"></script>
+</body>
+</html>

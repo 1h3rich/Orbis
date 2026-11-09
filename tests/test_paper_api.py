@@ -103,8 +103,8 @@ def test_paper_buy_api_executes_order():
     assert data["executed"] is True
     assert data["reason"] == "Paper trade executed"
     assert data["asset"] == "BTC"
-    assert data["amount_spent"] == 100
-    assert data["asset_received"] == 0.00099
+    assert Decimal(data["amount_spent"]) == Decimal("100")
+    assert Decimal(data["asset_received"]) == Decimal("0.00099")
 
     app.dependency_overrides.clear()
 
@@ -162,8 +162,8 @@ def test_paper_buy_api_records_operation():
     # Datos financieros
     assert operation["asset"] == "BTC"
     assert operation["quote_currency"] == "EUR"
-    assert operation["amount_spent"] == 100
-    assert operation["asset_received"] == 0.00099
+    assert Decimal(operation["amount_spent"]) == Decimal("100")
+    assert Decimal(operation["asset_received"]) == Decimal("0.00099")
 
     # Toda operación debe tener fecha
     assert operation["timestamp"] is not None
